@@ -1,0 +1,33 @@
+area/engine:
+  - changed-files:
+      - any-glob-to-any-file: ['src/engine/**']
+
+area/ui:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/reels/**'
+          - 'src/ui/**'
+          - 'src/styles/**'
+          - 'index.html'
+
+area/audio:
+  - changed-files:
+      - any-glob-to-any-file: ['assets/audio/**']
+
+area/tests:
+  - changed-files:
+      - any-glob-to-any-file: ['tests/**']
+
+area/docs:
+  - changed-files:
+      - any-glob-to-any-file: ['docs/**', '*.md', '**/*.md']
+
+area/repo:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/**'
+          - 'scripts/**'
+          - 'package*.json'
+          - '*.config.*'
+          - '.gitignore'
+          - '.gitattributes'

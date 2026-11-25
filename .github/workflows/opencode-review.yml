@@ -1,0 +1,68 @@
+name: opencode-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: opencode-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  checks: read
+  # Required by anomalyco/opencode/github for OIDC token exchange.
+  id-token: write
+
+jobs:
+  review:
+    # Only ready PRs; skip drafts, bots, and forks (secrets are not
+    # passed to fork runs). The [bot] suffix guard also stops the
+    # review's own synchronize re-trigger loop.
+    if: |
+      github.event.pull_request.draft == false &&
+      github.actor != 'dependabot[bot]' &&
+      github.actor != 'renovate[bot]' &&
+      !endsWith(github.actor, '[bot]') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run OpenCode review
+        # Pinned to the SHA verified at adoption time; bump deliberately.
+        uses: anomalyco/opencode/github@77fc88c8ade8e5a620ebbe1197f3a572d29ae91a
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          KILO_API_KEY: ${{ secrets.KILO_API_KEY }}
+        with:
+          model: ${{ vars.OPENCODE_MODEL || 'opencode/muse-spark-1.2-contributor-free' }}
+          prompt: |
+            You are the BeatFrame PR reviewer. BeatFrame is a zero-dependency
+            ES-module Canvas reel studio (plain JS, no build step). Be STRICT:
+            flag every potential issue; mark each finding [critical],
+            [warning], or [info].
+
+            Repo invariants from AGENTS.md — verify every changed file against them:
+            - Zero middle dots: the character "·" must never appear in src/ or index.html; inline items are separated by "|" or spaces.
+            - Plain Persian user copy: visible labels/toasts use natural Persian, no developer jargon; standard units (BPM, PNG, MP4, 9:16, 16:9) are allowed.
+            - Zero ZWNJ canvas bugs: canvas text must set ctx.direction ("rtl"/"ltr") via drawText() and avoid ZWNJ characters that break shaping.
+            - No Base64 audio blobs in JS: default tracks are binary .mp3 files under assets/audio/ loaded via fetch(). Flag any base64/data-URI audio in src/.
+            - Preserve verification hooks: window.__BEATFRAME__ and window.__HAMZABAN__ in src/main.js must stay intact.
+            - WSOLA/exporter correctness: src/engine/wsola.js and exporter.js are pure DSP/muxing modules — flag sample-rate, channel, or frame-count mistakes.
+            - Deep-module discipline: each reel in src/reels/ stays an adapter behind REEL_RENDERERS; no business logic leaks into index.html or src/main.js.
+
+            Output format (keep concise):
+            Status: REQUEST_CHANGES | APPROVED — N [warning/critical] must be fixed before merge, M [info] optional
+            Must fix before merge:
+            - [ ] file_path:line_number [severity] description — positive fix
+            Optional / defer:
+            - [ ] file_path:line_number [info] description — defer reason
+            Set status to APPROVED only if zero [critical]/[warning] findings.
