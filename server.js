@@ -22,25 +22,7 @@ const MIME = {
   ".ico": "image/x-icon",
 };
 
-const server = http.createServer((req, res) => {
-  const method = req.method || "GET";
-  if (method !== "GET" && method !== "HEAD") {
-    res.writeHead(405, { "Content-Type": "text/plain; charset=utf-8" });
-    res.end("Method Not Allowed");
-    return;
-  }
-
-  const rawUrl = (req.url || "/").split("?")[0];
-  let relPath = decodeURIComponent(rawUrl);
-  if (relPath === "/") relPath = "/index.html";
-
-  const fullPath = path.resolve(__dirname, "." + relPath);
-  if (!fullPath.startsWith(__dirname)) {
-    res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
-    res.end("Forbidden");
-    return;
-  }
-
+function sendFile(req, res, method, fullPath, contentType) {
   fs.stat(fullPath, (err, stat) => {
     if (err || !stat.isFile()) {
       res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
@@ -48,8 +30,6 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    const ext = path.extname(fullPath).toLowerCase();
-    const contentType = MIME[ext] || "application/octet-stream";
     const total = stat.size;
     const baseHeaders = {
       "Content-Type": contentType,
@@ -85,6 +65,43 @@ const server = http.createServer((req, res) => {
     if (method === "HEAD") { res.end(); return; }
     fs.createReadStream(fullPath).pipe(res);
   });
+}
+
+const server = http.createServer((req, res) => {
+  const method = req.method || "GET";
+  if (method !== "GET" && method !== "HEAD") {
+    res.writeHead(405, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Method Not Allowed");
+    return;
+  }
+
+  const rawUrl = (req.url || "/").split("?")[0];
+  const relPath = decodeURIComponent(rawUrl);
+
+  if (relPath.startsWith("/api/track/")) {
+    let trackId = relPath.slice("/api/track/".length).replace(/\/+$/, "");
+    if (trackId.toLowerCase().endsWith(".mp3")) trackId = trackId.slice(0, -4);
+    if (!/^[A-Za-z0-9_-]+$/.test(trackId)) {
+      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+      res.end("Not Found");
+      return;
+    }
+    const audioDir = path.resolve(__dirname, "assets", "audio");
+    const trackPath = path.resolve(audioDir, `${trackId}.mp3`);
+    sendFile(req, res, method, trackPath, "application/octet-stream");
+    return;
+  }
+
+  const staticPath = relPath === "/" ? "/index.html" : relPath;
+  const fullPath = path.resolve(__dirname, "." + staticPath);
+  if (!fullPath.startsWith(__dirname)) {
+    res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Forbidden");
+    return;
+  }
+
+  const ext = path.extname(fullPath).toLowerCase();
+  sendFile(req, res, method, fullPath, MIME[ext] || "application/octet-stream");
 });
 
 server.listen(PORT, HOST, () => {

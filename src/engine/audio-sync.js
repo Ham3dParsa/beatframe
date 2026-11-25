@@ -116,28 +116,38 @@ export function getTrackUrlForStyle(style) {
   return getSlideSpec(style).defaultTrackUrl || "./assets/audio/bit2-lofi.mp3";
 }
 
+function trackApiUrlFor(url) {
+  const file = String(url).split("/").pop() || "";
+  const basename = file.replace(/\.mp3$/i, "");
+  return basename ? `/api/track/${encodeURIComponent(basename)}` : null;
+}
+
 async function fetchDefaultTrackBuffer(style) {
   const url = getTrackUrlForStyle(style);
   if (defaultTrackCache.has(url)) {
     return defaultTrackCache.get(url).slice(0);
   }
-  try {
-    const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) {
-      console.warn(`[BeatFrame audio] HTTP ${res.status} fetching ${url}`);
-      return null;
+  const apiUrl = trackApiUrlFor(url);
+  const candidates = apiUrl ? [apiUrl, url] : [url];
+  for (const candidate of candidates) {
+    try {
+      const res = await fetch(candidate, { cache: "no-store" });
+      if (!res.ok) {
+        console.warn(`[BeatFrame audio] HTTP ${res.status} fetching ${candidate}`);
+        continue;
+      }
+      const ab = await res.arrayBuffer();
+      if (!ab || ab.byteLength < 64) {
+        console.warn(`[BeatFrame audio] Empty or truncated audio (${ab ? ab.byteLength : 0} bytes) from ${candidate}`);
+        continue;
+      }
+      defaultTrackCache.set(url, ab.slice(0));
+      return ab;
+    } catch (err) {
+      console.warn(`[BeatFrame audio] Fetch failed for ${candidate}:`, err);
     }
-    const ab = await res.arrayBuffer();
-    if (!ab || ab.byteLength < 64) {
-      console.warn(`[BeatFrame audio] Empty or truncated audio (${ab ? ab.byteLength : 0} bytes) from ${url}`);
-      return null;
-    }
-    defaultTrackCache.set(url, ab.slice(0));
-    return ab;
-  } catch (err) {
-    console.warn(`[BeatFrame audio] Fetch failed for ${url}:`, err);
-    return null;
   }
+  return null;
 }
 
 // =========================================================================
