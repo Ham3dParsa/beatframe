@@ -1,6 +1,6 @@
 {
   "name": "beatframe",
-  "version": "1.0.0",
+  "version": "0.6.0",
   "description": "Zero-dependency beat-synced Canvas reel studio with pure-JS BeatAnalyzer, stereo WSOLA time-stretching, and Fast-Start MP4 export.",
   "type": "module",
   "private": true,

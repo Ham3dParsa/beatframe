@@ -1,4 +1,5 @@
 import { SLIDE_REGISTRY, getSlideSpec, getDuration, clamp } from "./core/registry.js";
+import { VERSION } from "./core/version.js";
 import { createShortcutStore } from "./core/shortcuts.js";
 import { REEL_RENDERERS, renderReel } from "./reels/index.js";
 import { StudioAudioEngine } from "./engine/audio-sync.js";
@@ -286,6 +287,7 @@ function tick(now) {
 
 // Deterministic verification hook (exposed as both __BEATFRAME__ and __HAMZABAN__)
 const studioApi = {
+  version: VERSION,
   setStyle: applyStyle,
   setAspect: applyAspect,
   seek: seekTo,
