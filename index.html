@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BeatFrame | همزبان</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="./src/styles/studio.css" />
+</head>
+<body>
+  <main class="stage" id="studioStage" aria-label="پیش نمایش ریلزهای همزبان">
+    <div class="canvas-frame">
+      <canvas id="reelCanvas" width="1080" height="1920" aria-label="بوم پخش ریلز همزبان"></canvas>
+    </div>
+    <div id="stageDropOverlay" class="stage-drop-overlay" aria-hidden="true">
+      <div class="stage-drop-card">
+        <span class="stage-drop-icon" aria-hidden="true">♪</span>
+        <strong class="stage-drop-title">فایل موزیک را اینجا رها کنید</strong>
+        <span class="stage-drop-sub">MP3 یا WAV برای تحلیل خودکار ضرب و همگام سازی</span>
+      </div>
+    </div>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <button
+    type="button"
+    id="hudMiniToggle"
+    class="hud-mini-toggle"
+    data-tip-title="نمایش یا مخفی کردن نوار ابزار"
+    data-tip-body="جمع کردن کنترل ها برای تماشای تمام صفحه"
+    data-tip-shortcut="toggleHud"
+    data-tip-state="وضعیت: نمایان"
+  >مخفی (H)</button>
+
+  <nav id="hudWrap" class="hud-wrap" aria-label="کنترل های پخش و خروجی">
+    <div class="hud" id="hudPanel">
+      <div id="exportBar" class="export-bar" role="status" aria-live="polite">
+        <span id="exportLabel">در حال ضبط ویدیو... <span class="ltr-num" id="exportPct">0%</span></span>
+        <div class="export-progress-track"><div class="export-progress-fill" id="exportFill"></div></div>
+        <button type="button" class="btn btn-danger" id="cancelExportBtn">لغو</button>
+      </div>
+
+      <div id="audioSyncDrawer" class="audio-sync-drawer" role="region" aria-label="هاب همگام سازی و تخمین ریتم موزیک">
+        <div class="sync-row">
+          <div class="sync-group sync-bpm-trio">
+            <span class="sync-track-name" id="syncTrackName">موزیک پیشفرض</span>
+            <span class="sync-badge sync-badge-music" id="syncMusicBpmBadge">♪ موزیک -- BPM</span>
+            <span class="sync-delta-pill" id="syncDeltaPill" dir="ltr">0%</span>
+            <span class="sync-badge sync-badge-slide" id="syncClipBpmBadge">▣ کلیپ -- BPM</span>
+            <span class="sync-badge" id="syncCompatBadge">آماده</span>
+            <button
+              type="button"
+              class="btn btn-suggest-slide"
+              id="syncTransferSlideBtn"
+              data-tip-title="انتقال به اسلاید سازگار"
+              data-tip-body="جابجایی این موزیک به اسلایدی با ریتم نزدیک تر"
+              hidden
+            >انتقال به اسلاید سازگار ↗</button>
+          </div>
+          <div class="sync-group">
+            <button
+              type="button"
+              class="btn btn-mini"
+              id="pickAudioFileBtn"
+              data-tip-title="انتخاب فایل موزیک"
+              data-tip-body="بارگذاری فایل MP3 یا WAV از دستگاه برای این اسلاید"
+            >انتخاب موزیک</button>
+            <button
+              type="button"
+              class="btn btn-mini btn-danger"
+              id="resetAudioBtn"
+              data-tip-title="بازگشت به موزیک پیشفرض"
+              data-tip-body="حذف موزیک دلخواه و بازگردانی ترک اصلی اسلاید"
+            >بازگشت به پیشفرض</button>
+            <button
+              type="button"
+              class="btn btn-mini"
+              id="closeTrimBtn"
+              data-tip-title="بستن پنل سینک"
+              data-tip-shortcut="closeOverlay"
+            >بستن</button>
+          </div>
+        </div>
+
+        <div class="sync-event-row">
+          <div class="sync-event-pins" id="syncEventPins" role="group" aria-label="نقاط کلیدی اسلاید"></div>
+          <button
+            type="button"
+            class="btn btn-mini btn-event-magnet"
+            id="snapToPeakBtn"
+            data-tip-title="چسباندن به اوج"
+            data-tip-body="قفل کردن نقطه انتخاب شده روی قوی ترین ضرب نزدیک و پخش پیش نمایش"
+            data-tip-shortcut="syncClipToMusic"
+          >◆ چسباندن به اوج</button>
+        </div>
+
+        <div class="sync-wave-wrap">
+          <canvas id="syncWaveCanvas" class="sync-wave-canvas" width="640" height="46" aria-label="شکل موج موزیک و انتخاب بازه"></canvas>
+          <span class="sync-time-info" id="trimInfoText">پیشفرض فعال</span>
+        </div>
+
+        <div class="sync-row">
+          <div class="sync-group" id="syncSliceChips" aria-label="بازه های پیشنهادی">
+            <button type="button" class="btn btn-chip" data-slice-idx="0" data-tip-title="برش پیشنهادی اول" data-tip-shortcut="slice1" disabled>۱. اوج اصلی</button>
+            <button type="button" class="btn btn-chip" data-slice-idx="1" data-tip-title="برش پیشنهادی دوم" data-tip-shortcut="slice2" disabled>۲. شروع کوبنده</button>
+            <button type="button" class="btn btn-chip" data-slice-idx="2" data-tip-title="برش پیشنهادی سوم" data-tip-shortcut="slice3" disabled>۳. بخش میانی</button>
+          </div>
+
+          <div class="sync-group" aria-label="تنظیم سرعت و تطبیق ریتم">
+            <div class="sync-seg" id="flexModeGroup" role="group" aria-label="حالت تطبیق ریتم">
+              <button
+                type="button"
+                class="btn-seg is-active"
+                data-flex-mode="off"
+                aria-pressed="true"
+                data-tip-title="حالت اصلی"
+                data-tip-body="پخش موزیک و کلیپ بدون تغییر خودکار سرعت"
+                data-tip-shortcut="cycleSyncMode"
+              >اصلی</button>
+              <button
+                type="button"
+                class="btn-seg"
+                data-flex-mode="music_to_clip"
+                aria-pressed="false"
+                data-tip-title="موزیک به کلیپ"
+                data-tip-body="تطبیق سرعت موزیک با ریتم اسلاید (♪→▣)"
+                data-tip-shortcut="cycleSyncMode"
+              >موزیک به کلیپ</button>
+              <button
+                type="button"
+                class="btn-seg"
+                data-flex-mode="clip_to_music"
+                aria-pressed="false"
+                data-tip-title="کلیپ به موزیک"
+                data-tip-body="تطبیق سرعت اسلاید با ریتم طبیعی موزیک (▣→♪)"
+                data-tip-shortcut="cycleSyncMode"
+              >کلیپ به موزیک</button>
+              <button
+                type="button"
+                class="btn-seg"
+                data-flex-mode="balanced"
+                aria-pressed="false"
+                data-tip-title="حالت متعادل"
+                data-tip-body="تقسیم تغییر سرعت بین موزیک و کلیپ برای کمترین اعوجاج"
+                data-tip-shortcut="cycleSyncMode"
+              >متعادل</button>
+            </div>
+
+            <button
+              type="button"
+              class="btn btn-mini btn-pitch"
+              id="pitchLockBtn"
+              aria-pressed="false"
+              data-tip-title="حفظ تُن صدا"
+              data-tip-body="ثابت نگه داشتن زیر و بم صدا هنگام تغییر سرعت موزیک با WSOLA"
+              data-tip-shortcut="togglePitchLock"
+              data-tip-state="وضعیت: خاموش"
+            >حفظ تُن</button>
+
+            <div class="clip-speed-stepper" role="group" aria-label="سرعت کلیپ">
+              <button
+                type="button"
+                class="btn-step"
+                id="clipSpeedMinusBtn"
+                aria-label="کاهش سرعت کلیپ"
+                data-tip-title="کاهش سرعت کلیپ"
+                data-tip-body="کاهش سرعت پخش اسلاید با گام 0.01x"
+              >-</button>
+              <button
+                type="button"
+                class="btn-step-readout ltr-num"
+                id="clipSpeedReadout"
+                data-tip-title="سرعت کلیپ"
+                data-tip-body="دوبار کلیک برای بازگشت به سرعت ×1.00"
+                data-tip-state="بازه مجاز: 0.85x تا 1.15x"
+              >×1.00</button>
+              <button
+                type="button"
+                class="btn-step"
+                id="clipSpeedPlusBtn"
+                aria-label="افزایش سرعت کلیپ"
+                data-tip-title="افزایش سرعت کلیپ"
+                data-tip-body="افزایش سرعت پخش اسلاید با گام 0.01x"
+              >+</button>
+            </div>
+          </div>
+
+          <div class="sync-group" aria-label="ابزارهای برش و پایان بندی">
+            <button
+              type="button"
+              class="btn btn-mini btn-magnet is-active"
+              id="beatMagnetBtn"
+              aria-pressed="true"
+              data-tip-title="آهنربای ضرب"
+              data-tip-body="چسباندن خودکار جابجایی شکل موج به نزدیک ترین ضرب بدون رانش فاز"
+              data-tip-shortcut="toggleBeatMagnet"
+              data-tip-state="وضعیت: روشن"
+            >آهنربای ضرب</button>
+            <button
+              type="button"
+              class="btn btn-mini"
+              id="autoLoopBtn"
+              aria-pressed="false"
+              data-tip-title="چرخه خودکار"
+              data-tip-body="تکرار نرم روی خط میزان برای موزیک های کوتاه تر از اسلاید"
+              data-tip-shortcut="toggleAutoLoop"
+              data-tip-state="وضعیت: خاموش"
+            >چرخه خودکار</button>
+            <button
+              type="button"
+              class="btn btn-mini btn-fade"
+              id="endingFadeBtn"
+              data-fade-mode="soft"
+              data-tip-title="پایان بندی صدا"
+              data-tip-body="تغییر بین محو نرم، برش ضربدار و خاموش در انتهای خروجی"
+              data-tip-state="حالت فعلی: محو نرم"
+            >محو نرم</button>
+            <button
+              type="button"
+              class="btn btn-mini"
+              id="nudgeBarMinusBtn"
+              data-tip-title="یک میزان عقب"
+              data-tip-body="عقب بردن نقطه شروع موزیک به اندازه یک میزان"
+              data-tip-shortcut="nudgeBarBack"
+            >-۱ میزان</button>
+            <button
+              type="button"
+              class="btn btn-mini"
+              id="nudgeBarPlusBtn"
+              data-tip-title="یک میزان جلو"
+              data-tip-body="جلو بردن نقطه شروع موزیک به اندازه یک میزان"
+              data-tip-shortcut="nudgeBarForward"
+            >+۱ میزان</button>
+            <button
+              type="button"
+              class="btn btn-mini ltr-num"
+              id="trimMinusBtn"
+              data-tip-title="تنظیم ریز به عقب"
+              data-tip-body="۰.۱ ثانیه عقب بردن شروع موزیک"
+              data-tip-shortcut="nudgeFineBack"
+            >-0.1s</button>
+            <button
+              type="button"
+              class="btn btn-mini ltr-num"
+              id="trimPlusBtn"
+              data-tip-title="تنظیم ریز به جلو"
+              data-tip-body="۰.۱ ثانیه جلو بردن شروع موزیک"
+              data-tip-shortcut="nudgeFineForward"
+            >+0.1s</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="timeline-row">
+        <span class="time-readout" id="timeReadout">00:00 / 00:20</span>
+        <div class="timeline-track-wrap">
+          <div class="timeline-labels" id="timelineLabels" aria-hidden="true">
+            <span>Hook | 4.2s</span>
+            <span>Front | 8.2s</span>
+            <span>Reveal | 15s</span>
+            <span>Outro | 20s</span>
+          </div>
+          <div class="timeline-segments" aria-hidden="true">
+            <div class="timeline-fill" id="timelineFill"></div>
+          </div>
+          <div class="timeline-markers" id="timelineMarkers" aria-hidden="true">
+            <div class="timeline-marker m-act2"></div>
+            <div class="timeline-marker m-act3"></div>
+            <div class="timeline-marker m-act4"></div>
+          </div>
+          <input
+            type="range"
+            id="timelineSlider"
+            class="timeline-slider"
+            min="0"
+            max="20"
+            step="0.01"
+            value="0"
+            aria-label="خط زمان ویدیو بر حسب ثانیه"
+          />
+        </div>
+      </div>
+
+      <div class="hud-row">
+        <div class="hud-cluster" role="group" aria-label="انتخاب استایل ریلز">
+          <button type="button" class="btn is-active" data-style="bit2" aria-pressed="true" data-tip-title="استایل ۰۱" data-tip-body="2-BIT با ریتم ۸۵ BPM" data-tip-shortcut="slide1">۰۱ استایل <span class="ltr-num">2-BIT</span></button>
+          <button type="button" class="btn" data-style="atashkadeh" aria-pressed="false" data-tip-title="استایل ۰۲" data-tip-body="آتشکده 2-BIT با ریتم ۱۲۰ BPM" data-tip-shortcut="slide2">۰۲ آتشکده <span class="ltr-num">2-BIT</span></button>
+          <button type="button" class="btn" data-style="kinetic" aria-pressed="false" data-tip-title="استایل ۰۳" data-tip-body="کینتیک پانچ با ریتم ۱۲۰ BPM" data-tip-shortcut="slide3">۰۳ کینتیک پانچ</button>
+          <button type="button" class="btn" data-style="atashpro" aria-pressed="false" data-tip-title="استایل ۰۴" data-tip-body="آتشکده پرو ۳۰ ثانیه با ریتم ۱۲۸ BPM" data-tip-shortcut="slide4">۰۴ آتشکده پرو</button>
+          <button type="button" class="btn" data-style="cyberpro" aria-pressed="false" data-tip-title="استایل ۰۵" data-tip-body="سایبرپانک ۳۰ ثانیه با ریتم ۱۲۸ BPM" data-tip-shortcut="slide5">۰۵ سایبرپانک</button>
+        </div>
+
+        <span class="hud-divider" aria-hidden="true"></span>
+
+        <div class="hud-cluster" role="group" aria-label="کنترل پخش و صدا">
+          <button type="button" class="btn" id="playPauseBtn" aria-label="پخش یا توقف" data-tip-title="پخش یا توقف" data-tip-shortcut="playPause" data-tip-state="وضعیت: در حال پخش">توقف</button>
+          <button type="button" class="btn" id="restartBtn" aria-label="شروع از اول" data-tip-title="بازگشت به ابتدا" data-tip-shortcut="restart">از اول</button>
+          <button type="button" class="btn" id="prevActBtn" data-tip-title="پرده قبلی" data-tip-shortcut="prevAct">« پرده</button>
+          <button type="button" class="btn" id="nextActBtn" data-tip-title="پرده بعدی" data-tip-shortcut="nextAct">پرده »</button>
+          <button type="button" class="btn" id="dockPosBtn" data-tip-title="موقعیت نوار ابزار" data-tip-body="جابجایی نوار به بالا یا پایین صفحه" data-tip-state="موقعیت: پایین">بالا</button>
+          <button type="button" class="btn" id="aspectBtn" aria-label="تغییر نسبت تصویر" data-tip-title="نسبت تصویر" data-tip-body="جابجایی بین عمودی 9:16 و افقی 16:9" data-tip-shortcut="toggleAspect" data-tip-state="نسبت فعلی: 9:16"><span class="ltr-num">9:16</span></button>
+          <button type="button" class="btn is-active" id="soundBtn" aria-pressed="true" aria-label="قطع یا وصل صدا" data-tip-title="قطع یا وصل صدا" data-tip-shortcut="mute" data-tip-state="وضعیت: با صدا">با صدا</button>
+          <button type="button" class="btn btn-music-trigger" id="uploadAudioBtn" data-tip-title="پنل سینک موزیک" data-tip-body="تنظیم ریتم، برش و همگام سازی موزیک دلخواه" data-tip-shortcut="toggleSyncDrawer" data-tip-state="وضعیت: بسته">♪ موزیک</button>
+          <input type="file" id="audioFileInput" accept="audio/*" hidden />
+        </div>
+
+        <span class="hud-divider" aria-hidden="true"></span>
+
+        <div class="hud-cluster" role="group" aria-label="خروجی و راهنما">
+          <button type="button" class="btn btn-export" id="exportVideoBtn" data-tip-title="خروجی ویدیو MP4" data-tip-body="ضبط و دانلود ویدیوی نهایی با صدای همگام" data-tip-shortcut="exportVideo">خروجی ویدیو (<span class="ltr-num">20s</span>)</button>
+          <button type="button" class="btn" id="exportPngBtn" data-tip-title="ذخیره فریم PNG" data-tip-body="ذخیره تصویر باکیفیت از فریم فعلی" data-tip-shortcut="exportPng">عکس PNG</button>
+          <button type="button" class="btn btn-help" id="helpBtn" aria-label="راهنمای میانبرها" data-tip-title="راهنمای میانبرها" data-tip-body="مشاهده و شخصی سازی میانبرهای صفحه کلید" data-tip-shortcut="toggleHelp">?</button>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <div id="bfHelpModal" class="help-modal" role="dialog" aria-modal="true" aria-labelledby="bfHelpTitle" hidden>
+    <div class="help-backdrop" id="bfHelpBackdrop"></div>
+    <div class="help-dialog">
+      <div class="help-header">
+        <div class="help-title-wrap">
+          <h2 id="bfHelpTitle" class="help-title">میانبرها و راهنمای رنگ ها</h2>
+          <span class="help-sub">برای تغییر هر میانبر روی کلید آن کلیک کنید و کلید جدید را بزنید</span>
+        </div>
+        <div class="help-actions">
+          <button type="button" class="btn btn-mini" id="resetShortcutsBtn">بازگشت به پیشفرض</button>
+          <button type="button" class="btn btn-mini" id="closeHelpBtn">بستن</button>
+        </div>
+      </div>
+
+      <div class="help-legend" aria-label="راهنمای سه رنگ اصلی">
+        <span class="legend-chip legend-music">♪ موزیک (ضرب و ریتم آهنگ)</span>
+        <span class="legend-chip legend-slide">▣ کلیپ (ریتم و زمان بندی اسلاید)</span>
+        <span class="legend-chip legend-event">◆ لنگر رویداد (نقاط کلیدی اسلاید)</span>
+      </div>
+
+      <div class="help-grid" id="bfHelpGrid"></div>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
