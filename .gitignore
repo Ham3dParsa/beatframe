@@ -1,0 +1,19 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Env / logs
+.env
+.env.*
+!.env.example
+*.log
+
+# Worktrees / scratch
+.worktrees/
+temp/
+
+# Transient opencode review output (never commit)
+.opencode-review-result.json

@@ -12,57 +12,618 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
-  checks: read
-  # Required by anomalyco/opencode/github for OIDC token exchange.
+  statuses: write
+  # Required by anomalyco/opencode/github (default use_github_token=false) for OIDC token exchange
   id-token: write
 
 jobs:
   review:
-    # Only ready PRs; skip drafts, bots, and forks (secrets are not
-    # passed to fork runs). The [bot] suffix guard also stops the
-    # review's own synchronize re-trigger loop.
+    # Only ready PRs; skip drafts, bots, and forks (secrets are not passed on forks).
+    # Bot-loop guard: skip [bot] actors to prevent synchronize/comment re-trigger loops.
     if: |
       github.event.pull_request.draft == false &&
       github.actor != 'dependabot[bot]' &&
       github.actor != 'renovate[bot]' &&
+      github.actor != 'opencode-agent[bot]' &&
+      github.actor != 'kilo-code-bot[bot]' &&
       !endsWith(github.actor, '[bot]') &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 70
+    env:
+      HAS_KILO: ${{ secrets.KILO_API_KEY != '' && '1' || '0' }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Run OpenCode review
-        # Pinned to the SHA verified at adoption time; bump deliberately.
-        uses: anomalyco/opencode/github@77fc88c8ade8e5a620ebbe1197f3a572d29ae91a
+      - name: Record review start time
+        id: timer
+        run: |
+          if [ -z "$(git ls-files -- .opencode-review-result.json 2>/dev/null)" ]; then
+            rm -f .opencode-review-result.json
+          fi
+          if [ ! -s .github/opencode/review_prompt.md ]; then
+            echo "::error::Missing or empty .github/opencode/review_prompt.md"
+            exit 1
+          fi
+          echo "start_ts=$(date +%s)" >> "$GITHUB_OUTPUT"
+          {
+            echo "prompt<<__BEATFRAME_REVIEW_PROMPT_EOF__"
+            cat .github/opencode/review_prompt.md
+            echo ""
+            echo "__BEATFRAME_REVIEW_PROMPT_EOF__"
+          } >> "$GITHUB_OUTPUT"
+
+      - id: rev1
+        name: Review (1/6 — Zen DeepSeek v4.1 Flash Free)
+        continue-on-error: true
+        timeout-minutes: 10
+        uses: anomalyco/opencode/github@2c14fc5586fe0b88e5c04732d2e846769cc35671 # pinned 2026-11
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        with:
+          model: opencode/deepseek-v4.1-flash-free
+          prompt: ${{ steps.timer.outputs.prompt }}
+
+      - id: rev2
+        name: Review (2/6 — Zen HY 4 Flash Free)
+        if: steps.rev1.outcome != 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        uses: anomalyco/opencode/github@2c14fc5586fe0b88e5c04732d2e846769cc35671 # pinned 2026-11
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        with:
+          model: opencode/hy4-flash-free
+          prompt: ${{ steps.timer.outputs.prompt }}
+
+      - id: rev3
+        name: Review (3/6 — Kilo Ling 3.2 Flash Free)
+        if: steps.rev1.outcome != 'success' && steps.rev2.outcome != 'success' && env.HAS_KILO == '1'
+        continue-on-error: true
+        timeout-minutes: 10
+        uses: anomalyco/opencode/github@2c14fc5586fe0b88e5c04732d2e846769cc35671 # pinned 2026-11
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           KILO_API_KEY: ${{ secrets.KILO_API_KEY }}
         with:
-          model: ${{ vars.OPENCODE_MODEL || 'opencode/muse-spark-1.2-contributor-free' }}
-          prompt: |
-            You are the BeatFrame PR reviewer. BeatFrame is a zero-dependency
-            ES-module Canvas reel studio (plain JS, no build step). Be STRICT:
-            flag every potential issue; mark each finding [critical],
-            [warning], or [info].
+          model: kilo/inclusionai/ling-3.2-flash:free
+          prompt: ${{ steps.timer.outputs.prompt }}
 
-            Repo invariants from AGENTS.md — verify every changed file against them:
-            - Zero middle dots: the character "·" must never appear in src/ or index.html; inline items are separated by "|" or spaces.
-            - Plain Persian user copy: visible labels/toasts use natural Persian, no developer jargon; standard units (BPM, PNG, MP4, 9:16, 16:9) are allowed.
-            - Zero ZWNJ canvas bugs: canvas text must set ctx.direction ("rtl"/"ltr") via drawText() and avoid ZWNJ characters that break shaping.
-            - No Base64 audio blobs in JS: default tracks are binary .mp3 files under assets/audio/ loaded via fetch(). Flag any base64/data-URI audio in src/.
-            - Preserve verification hooks: window.__BEATFRAME__ and window.__HAMZABAN__ in src/main.js must stay intact.
-            - WSOLA/exporter correctness: src/engine/wsola.js and exporter.js are pure DSP/muxing modules — flag sample-rate, channel, or frame-count mistakes.
-            - Deep-module discipline: each reel in src/reels/ stays an adapter behind REEL_RENDERERS; no business logic leaks into index.html or src/main.js.
+      - id: rev4
+        name: Review (4/6 — Kilo Nemotron 3.5 Super VL Free)
+        if: steps.rev1.outcome != 'success' && steps.rev2.outcome != 'success' && steps.rev3.outcome != 'success' && env.HAS_KILO == '1'
+        continue-on-error: true
+        timeout-minutes: 10
+        uses: anomalyco/opencode/github@2c14fc5586fe0b88e5c04732d2e846769cc35671 # pinned 2026-11
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          KILO_API_KEY: ${{ secrets.KILO_API_KEY }}
+        with:
+          model: kilo/nvidia/nemotron-3.5-super-vl:free
+          prompt: ${{ steps.timer.outputs.prompt }}
 
-            Output format (keep concise):
-            Status: REQUEST_CHANGES | APPROVED — N [warning/critical] must be fixed before merge, M [info] optional
-            Must fix before merge:
-            - [ ] file_path:line_number [severity] description — positive fix
-            Optional / defer:
-            - [ ] file_path:line_number [info] description — defer reason
-            Set status to APPROVED only if zero [critical]/[warning] findings.
+      - id: rev5
+        name: Review (5/6 — Zen Nemotron 3.5 Super VL Free)
+        if: steps.rev1.outcome != 'success' && steps.rev2.outcome != 'success' && steps.rev3.outcome != 'success' && steps.rev4.outcome != 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        uses: anomalyco/opencode/github@2c14fc5586fe0b88e5c04732d2e846769cc35671 # pinned 2026-11
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        with:
+          model: opencode/nemotron-3.5-super-vl-free
+          prompt: ${{ steps.timer.outputs.prompt }}
+
+      - id: rev6
+        name: Review (6/6 — Zen MiMo v2.6 Flash Free)
+        if: steps.rev1.outcome != 'success' && steps.rev2.outcome != 'success' && steps.rev3.outcome != 'success' && steps.rev4.outcome != 'success' && steps.rev5.outcome != 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        uses: anomalyco/opencode/github@2c14fc5586fe0b88e5c04732d2e846769cc35671 # pinned 2026-11
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        with:
+          model: opencode/mimo-v2.6-flash-free
+          prompt: ${{ steps.timer.outputs.prompt }}
+
+      # Publish a formal GitHub PR review with diff-validated inline suggestions,
+      # commit status ("Review Gate"), and workflow annotations. Minimize any
+      # transient/superseded opencode-agent[bot] issue comments via GraphQL
+      # instead of deleting them so audit logs stay intact.
+      - name: Publish formal PR review
+        if: ${{ !cancelled() }}
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          START_TS: ${{ steps.timer.outputs.start_ts }}
+          OUT_1: ${{ steps.rev1.outcome }}
+          OUT_2: ${{ steps.rev2.outcome }}
+          OUT_3: ${{ steps.rev3.outcome }}
+          OUT_4: ${{ steps.rev4.outcome }}
+          OUT_5: ${{ steps.rev5.outcome }}
+          OUT_6: ${{ steps.rev6.outcome }}
+        with:
+          script: |
+            const fs = require('fs');
+            const crypto = require('crypto');
+            const { execFileSync } = require('child_process');
+
+            const { owner, repo } = context.repo;
+            const pull_number = context.payload.pull_request.number;
+            const commit_id = context.payload.pull_request.head.sha;
+
+            const startTs = Number(process.env.START_TS) || Math.floor(Date.now() / 1000);
+            const elapsedSec = Math.max(0, Math.floor(Date.now() / 1000) - startTs);
+            const mins = Math.floor(elapsedSec / 60);
+            const secs = elapsedSec % 60;
+            const durationStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+
+            const candidates = [
+              { outcome: process.env.OUT_1, model: 'opencode/deepseek-v4.1-flash-free', slot: '1/6' },
+              { outcome: process.env.OUT_2, model: 'opencode/hy4-flash-free', slot: '2/6' },
+              { outcome: process.env.OUT_3, model: 'kilo/inclusionai/ling-3.2-flash:free', slot: '3/6' },
+              { outcome: process.env.OUT_4, model: 'kilo/nvidia/nemotron-3.5-super-vl:free', slot: '4/6' },
+              { outcome: process.env.OUT_5, model: 'opencode/nemotron-3.5-super-vl-free', slot: '5/6' },
+              { outcome: process.env.OUT_6, model: 'opencode/mimo-v2.6-flash-free', slot: '6/6' },
+            ];
+
+            const STUB_PREFIX = '[FAILED MODEL ATTEMPT]';
+            const isErrorStubComment = (c) => {
+              const body = c?.body || '';
+              return (
+                /^(\[FAILED MODEL ATTEMPT\].*)?(Model not found:|fatal:|APIError:|FreeUsageLimitError)/.test(body) ||
+                (/Status:\s+REQUEST_CHANGES/.test(body) && /Status:\s+APPROVED/.test(body))
+              );
+            };
+
+            const markErrorStubIfNeeded = async (c) => {
+              const body = String(c?.body || '');
+              if (!c?.id || body.startsWith(STUB_PREFIX)) return;
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: c.id,
+                body: `${STUB_PREFIX} ${body}`,
+              }).catch((e) => core.warning(`Failed to mark error-stub comment ${c.id}: ${e.message}`));
+            };
+
+            const minimizeCommentIfNeeded = async (comment, classifier = 'OUTDATED') => {
+              const nid = comment?.node_id;
+              if (!nid) return;
+              try {
+                const q = await github.graphql(
+                  'query($id:ID!){node(id:$id){... on IssueComment{isMinimized}}}',
+                  { id: nid },
+                );
+                if (q?.node?.isMinimized) {
+                  core.info(`Comment ${nid} already minimized; skipping`);
+                  return;
+                }
+                await github.graphql(
+                  'mutation($id:ID!,$classifier:ReportedContentClassifiers!){minimizeComment(input:{subjectId:$id,classifier:$classifier}){clientMutationId}}',
+                  { id: nid, classifier },
+                );
+                core.info(`Marked comment ${nid} ${classifier}`);
+              } catch (e) {
+                core.warning(`Failed to minimize comment ${nid}: ${e.message}`);
+              }
+            };
+
+            let statusPublished = false;
+            try {
+              const matchedWinner = candidates.find((c) => c.outcome === 'success');
+              if (!matchedWinner) {
+                const issueComments = await github.paginate(github.rest.issues.listComments, {
+                  owner, repo, issue_number: pull_number, per_page: 100,
+                }).catch(() => []);
+                for (const c of issueComments) {
+                  if (c.user?.login === 'opencode-agent[bot]' && isErrorStubComment(c)) {
+                    await markErrorStubIfNeeded(c);
+                    await minimizeCommentIfNeeded(c, 'RESOLVED');
+                  }
+                }
+                const allFailSummary = '### ❌ خطا در اجرای مدل‌های بازبینی\nهمهٔ مدل‌های زنجیرهٔ بازبینی با خطا مواجه شدند یا اسکیپ شدند.';
+                await github.rest.repos.createCommitStatus({
+                  owner,
+                  repo,
+                  sha: commit_id,
+                  context: 'Review Gate',
+                  state: 'failure',
+                  description: `ERROR - all review fallback models failed (${durationStr})`.slice(0, 140),
+                });
+                statusPublished = true;
+                await core.summary.addRaw(allFailSummary).write();
+                core.setFailed('All review fallback models failed or were skipped.');
+                return;
+              }
+
+              const winner = matchedWinner;
+              const footnote = `\n\n---\n> 🤖 **Reviewer:** \`${winner.model}\` (\`${winner.slot}\`) · ⏱️ **Duration:** \`${durationStr}\``;
+
+              const resultPath = '.opencode-review-result.json';
+              let isTracked = false;
+              try {
+                isTracked = Boolean(execFileSync('git', ['ls-files', '--', resultPath], { encoding: 'utf8' }).trim());
+              } catch (_) {}
+
+              let parsed = null;
+              if (isTracked) {
+                core.warning(`${resultPath} is tracked in git; ignoring it as untrusted.`);
+              } else if (fs.existsSync(resultPath)) {
+                try {
+                  const stat = fs.statSync(resultPath);
+                  if (stat.mtimeMs / 1000 >= startTs - 10) {
+                    parsed = JSON.parse(fs.readFileSync(resultPath, 'utf8'));
+                  } else {
+                    core.warning(`Ignoring stale ${resultPath} (older than current run).`);
+                  }
+                } catch (err) {
+                  core.warning(`Failed to parse ${resultPath}: ${err.message}`);
+                }
+                try { fs.unlinkSync(resultPath); } catch (_) {}
+              }
+
+              const issueComments = await github.paginate(github.rest.issues.listComments, {
+                owner, repo, issue_number: pull_number, per_page: 100,
+              });
+              const botIssueComments = issueComments.filter((c) => c.user?.login === 'opencode-agent[bot]');
+
+              const validVerdicts = ['APPROVED', 'REQUEST_CHANGES'];
+              if (
+                !parsed ||
+                typeof parsed !== 'object' ||
+                !Array.isArray(parsed.findings) ||
+                !validVerdicts.includes(parsed.verdict)
+              ) {
+                for (const c of botIssueComments) {
+                  if (isErrorStubComment(c)) {
+                    await markErrorStubIfNeeded(c);
+                    await minimizeCommentIfNeeded(c, 'RESOLVED');
+                  }
+                }
+                const failSummary = '### ❌ خطا در دریافت نتیجهٔ بازبینی\nفایل نتیجهٔ ساختاریافتهٔ بازبینی تولید نشد یا معتبر نبود، بنابراین گیت مرج مسدود شد.';
+                await github.rest.repos.createCommitStatus({
+                  owner,
+                  repo,
+                  sha: commit_id,
+                  context: 'Review Gate',
+                  state: 'failure',
+                  description: `ERROR - invalid or missing review output (${durationStr})`.slice(0, 140),
+                });
+                statusPublished = true;
+                await core.summary.addRaw(failSummary).write();
+                core.setFailed('Structured review JSON missing or invalid; cannot enforce the review gate.');
+                return;
+              }
+
+              // Parse PR diff hunks into valid RIGHT-side line sets per file
+              const prFiles = await github.paginate(github.rest.pulls.listFiles, {
+                owner, repo, pull_number, per_page: 100,
+              });
+              const validLines = new Map();
+              for (const f of prFiles) {
+                const lines = new Set();
+                if (f.patch) {
+                  const hunkRegex = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/gm;
+                  let m;
+                  while ((m = hunkRegex.exec(f.patch)) !== null) {
+                    const start = Number(m[1]);
+                    const count = m[2] === undefined ? 1 : Number(m[2]);
+                    for (let ln = start; ln < start + count; ln++) lines.add(ln);
+                  }
+                }
+                validLines.set(f.filename, lines);
+              }
+
+              // Existing inline review comment fingerprints for dedupe across synchronize
+              const existingReviewComments = await github.paginate(github.rest.pulls.listReviewComments, {
+                owner, repo, pull_number, per_page: 100,
+              });
+              const seenFingerprints = new Set();
+              for (const rc of existingReviewComments) {
+                const matches = (rc.body || '').matchAll(/<!-- beatframe-fp:([a-f0-9]{12}) -->/g);
+                for (const m of matches) seenFingerprints.add(m[1]);
+              }
+
+              const sevEmoji = { critical: '🔴', warning: '🟡', info: '🔵' };
+              const findings = parsed.findings;
+              let critCount = 0;
+              let warnCount = 0;
+              let infoCount = 0;
+
+              const inlineComments = [];
+              const validAnnotations = [];
+              const mustFixPlainFa = [];
+              const mustFixBody = [];
+              const optionalBody = [];
+
+              const makeFence = (code, lang) => {
+                if (lang === 'suggestion' && code.includes('```')) {
+                  let ticks = '````';
+                  while (code.includes(ticks)) ticks += '`';
+                  return `${ticks}diff\n${code}\n${ticks}`;
+                }
+                let ticks = '```';
+                while (code.includes(ticks)) ticks += '`';
+                return `${ticks}${lang}\n${code}\n${ticks}`;
+              };
+
+              for (const item of findings) {
+                if (!item || typeof item !== 'object') continue;
+                const sev = ['critical', 'warning', 'info'].includes(item.severity) ? item.severity : 'info';
+                if (sev === 'critical') critCount++;
+                else if (sev === 'warning') warnCount++;
+                else infoCount++;
+
+                const emoji = sevEmoji[sev];
+                const filePath = String(item.path || '').replace(/^\.\//, '');
+                const rawEnd = Number(item.line) || 0;
+                const endLine = rawEnd > 0 ? Math.max(1, Math.trunc(rawEnd)) : 0;
+                const startLine = endLine > 0 ? Math.max(1, Math.min(endLine, Math.trunc(Number(item.start_line) || endLine))) : 0;
+                const title = String(item.title || 'Finding').trim();
+                const plainFa = String(item.plain_fa || '').trim();
+                const explanation = String(item.body || '').trim();
+                const suggestion = typeof item.suggestion === 'string' ? item.suggestion.replace(/\n$/, '') : '';
+
+                if (sev !== 'info' && plainFa) {
+                  mustFixPlainFa.push(`- ${emoji} ${plainFa}`);
+                }
+
+                const fp = crypto
+                  .createHash('sha256')
+                  .update(`${filePath}|${sev}|${startLine}-${endLine}|${title}`)
+                  .digest('hex')
+                  .slice(0, 12);
+
+                const fileLines = validLines.get(filePath);
+                let canInline = Boolean(fileLines && endLine > 0 && startLine > 0);
+                if (canInline) {
+                  for (let ln = startLine; ln <= endLine; ln++) {
+                    if (!fileLines.has(ln)) { canInline = false; break; }
+                  }
+                }
+
+                if (canInline && validAnnotations.length < 50) {
+                  validAnnotations.push({
+                    sev,
+                    file: filePath,
+                    startLine,
+                    endLine,
+                    title: `[${sev}] ${title}`.slice(0, 255),
+                    message: (plainFa || explanation || title).slice(0, 1000),
+                  });
+                }
+
+                const locLabel = endLine > 0 ? `\`${filePath}:${startLine === endLine ? endLine : `${startLine}-${endLine}`}\`` : `\`${filePath || 'PR'}\``;
+                const summaryLine = `- [ ] ${locLabel} ${emoji} \`[${sev}]\` **${title}** — ${explanation}`;
+
+                if (canInline) {
+                  if (!seenFingerprints.has(fp)) {
+                    let commentBody = `${emoji} **\`[${sev}]\` ${title}**`;
+                    if (plainFa) {
+                      commentBody += `\n\n💬 **چرا و اهمیت:** ${plainFa}`;
+                      if (explanation) {
+                        commentBody += `\n\n<details><summary>🔧 توضیح فنی</summary>\n\n${explanation}\n\n</details>`;
+                      }
+                    } else if (explanation) {
+                      commentBody += `\n\n${explanation}`;
+                    }
+                    if (suggestion) {
+                      commentBody += `\n\n${makeFence(suggestion, 'suggestion')}`;
+                    }
+                    commentBody += `\n<!-- beatframe-fp:${fp} -->`;
+
+                    const payload = {
+                      path: filePath,
+                      line: endLine,
+                      side: 'RIGHT',
+                      body: commentBody,
+                    };
+                    if (startLine < endLine) {
+                      payload.start_line = startLine;
+                      payload.start_side = 'RIGHT';
+                    }
+                    inlineComments.push(payload);
+                  }
+                  if (sev === 'info') optionalBody.push(`${summaryLine} *(inline)*`);
+                  else mustFixBody.push(`${summaryLine} *(inline)*`);
+                } else {
+                  const block = suggestion ? `${summaryLine}\n${makeFence(suggestion, 'diff')}` : summaryLine;
+                  if (sev === 'info') optionalBody.push(block);
+                  else mustFixBody.push(block);
+                }
+              }
+
+              const hasBlocking = critCount > 0 || warnCount > 0 || parsed.verdict === 'REQUEST_CHANGES';
+              const verdictHeader = hasBlocking ? '### ⚠️ نیازمند اصلاح (`REQUEST_CHANGES`)' : '### ✅ تایید شده (`APPROVED`)';
+              const defaultSummaryFa = hasBlocking
+                ? 'در این تغییرات چند مورد نیازمند اصلاح پیدا شد که بهتر است قبل از ادغام برطرف شوند.'
+                : 'تغییرات بررسی شدند و مورد مسدودکننده‌ای برای ادغام وجود ندارد.';
+              const defaultActionFa = hasBlocking
+                ? 'لطفاً به دستیار بگویید موارد زرد/قرمز را اصلاح کند (یا در صورت وجود دکمهٔ Commit suggestion زیر کامنت‌های خطی را بزنید).'
+                : 'می‌توانید این PR را با خیال راحت Merge کنید.';
+
+              const summaryFa = parsed.summary_fa ? String(parsed.summary_fa).trim() : defaultSummaryFa;
+              const actionFa = parsed.action_fa ? String(parsed.action_fa).trim() : defaultActionFa;
+
+              const bodyParts = [
+                verdictHeader,
+                `> 📊 **خلاصه:** \`${critCount}\` بحرانی 🔴 · \`${warnCount}\` هشدار 🟡 · \`${infoCount}\` پیشنهادی 🔵`,
+                '',
+                `**📝 توضیح ساده:** ${summaryFa}`,
+                '',
+                `**🎯 اقدام پیشنهادی برای شما:** ${actionFa}`,
+              ];
+
+              if (mustFixPlainFa.length) {
+                bodyParts.push('', '**📌 موارد مهم به زبان ساده:**', ...mustFixPlainFa);
+              }
+
+              bodyParts.push(
+                '',
+                '<details>',
+                '<summary>🔧 جزئیات فنی (برای دستیار / برنامه‌نویس)</summary>',
+                '',
+                parsed.summary ? String(parsed.summary).trim() : '',
+                '',
+                '**🚨 Must fix before merge:**',
+                mustFixBody.length ? mustFixBody.join('\n') : '- [x] none',
+                '',
+                '**💡 Optional / defer:**',
+                optionalBody.length ? optionalBody.join('\n') : '- none',
+                '',
+                `**🛡️ Traps checked:** ${parsed.traps_checked || 'none relevant'}`,
+                '</details>'
+              );
+
+              const reviewBody = bodyParts.join('\n') + footnote;
+
+              const submitReview = async (eventType, commentsList, bodyText) => {
+                return github.rest.pulls.createReview({
+                  owner,
+                  repo,
+                  pull_number,
+                  commit_id,
+                  event: eventType,
+                  body: bodyText,
+                  comments: commentsList,
+                });
+              };
+
+              const primaryEvent = hasBlocking ? 'REQUEST_CHANGES' : 'APPROVE';
+              let submittedReview = null;
+              let fellBackToComment = false;
+              try {
+                const res = await submitReview(primaryEvent, inlineComments, reviewBody);
+                submittedReview = res.data;
+              } catch (err) {
+                if (err.status === 422 && primaryEvent === 'APPROVE') {
+                  core.info('APPROVE blocked by repo settings; retrying with COMMENT.');
+                  fellBackToComment = true;
+                  try {
+                    const res = await submitReview('COMMENT', inlineComments, reviewBody);
+                    submittedReview = res.data;
+                  } catch (err2) {
+                    if (err2.status === 422 && inlineComments.length > 0) {
+                      core.warning(`Inline comments rejected (422): ${err2.message}; folding into review body.`);
+                      const folded = inlineComments.map((c) => `#### \`${c.path}:${c.line}\`\n${c.body}`).join('\n\n');
+                      const res = await submitReview('COMMENT', [], `${reviewBody}\n\n---\n${folded}`);
+                      submittedReview = res.data;
+                    } else {
+                      throw err2;
+                    }
+                  }
+                } else if (err.status === 422 && inlineComments.length > 0) {
+                  core.warning(`Inline comments rejected (422): ${err.message}; folding into review body.`);
+                  const folded = inlineComments.map((c) => `#### \`${c.path}:${c.line}\`\n${c.body}`).join('\n\n');
+                  const res = await submitReview(primaryEvent, [], `${reviewBody}\n\n---\n${folded}`);
+                  submittedReview = res.data;
+                } else {
+                  throw err;
+                }
+              }
+
+              if (!hasBlocking && fellBackToComment) {
+                const priorReviews = await github.paginate(github.rest.pulls.listReviews, {
+                  owner, repo, pull_number, per_page: 100,
+                });
+                for (const r of priorReviews) {
+                  if (r.user?.login === 'github-actions[bot]' && r.state === 'CHANGES_REQUESTED') {
+                    await github.rest.pulls.dismissReview({
+                      owner,
+                      repo,
+                      pull_number,
+                      review_id: r.id,
+                      message: 'Superseded by APPROVED review.',
+                    }).catch((e) => core.info(`Could not dismiss prior review ${r.id}: ${e.message}`));
+                  }
+                }
+              }
+
+              // Emit diff-validated workflow annotations directly on opencode-review / review
+              for (const a of validAnnotations) {
+                const props = { file: a.file, startLine: a.startLine, endLine: a.endLine, title: a.title };
+                if (a.sev === 'critical') core.error(a.message, props);
+                else if (a.sev === 'warning') core.warning(a.message, props);
+                else core.notice(a.message, props);
+              }
+
+              // Publish standalone commit status (pure LTR avoids BiDi scramble)
+              const shortModel = winner.model.split('/').pop();
+              const statusDesc = (hasBlocking
+                ? `REQUEST_CHANGES: ${critCount} critical, ${warnCount} warning, ${infoCount} info (${shortModel}, ${durationStr})`
+                : `APPROVED: ${critCount} critical, ${warnCount} warning, ${infoCount} info (${shortModel}, ${durationStr})`
+              ).slice(0, 140);
+
+              const statusPayload = {
+                owner,
+                repo,
+                sha: commit_id,
+                context: 'Review Gate',
+                state: hasBlocking ? 'failure' : 'success',
+                description: statusDesc,
+              };
+              if (submittedReview?.html_url) {
+                statusPayload.target_url = submittedReview.html_url;
+              }
+              await github.rest.repos.createCommitStatus(statusPayload);
+              statusPublished = true;
+
+              const reviewLink = submittedReview?.html_url ? `\n\n[مشاهدهٔ Review کامل در PR](${submittedReview.html_url})` : '';
+              const checkSummary = [
+                `### ${hasBlocking ? '⚠️ نیازمند اصلاح' : '✅ تایید شده'}`,
+                `- **خلاصه:** ${summaryFa}`,
+                `- **اقدام پیشنهادی:** ${actionFa}`,
+                `- **یافته‌ها:** \`${critCount}\` بحرانی 🔴 · \`${warnCount}\` هشدار 🟡 · \`${infoCount}\` پیشنهادی 🔵`,
+                `- **مدل و زمان:** \`${winner.model}\` (\`${winner.slot}\`) · \`${durationStr}\`${reviewLink}`,
+              ].join('\n');
+              await core.summary.addRaw(checkSummary).write();
+
+              // Minimize transient / superseded opencode-agent[bot] issue comments
+              // only AFTER the formal review succeeds (never delete).
+              for (const c of botIssueComments) {
+                const createdTs = c.created_at ? Math.floor(new Date(c.created_at).getTime() / 1000) : 0;
+                const isCurrentRun = createdTs >= startTs - 10;
+                const body = c.body || '';
+                const hasMarker =
+                  body.includes('opencode-review-result.json') ||
+                  body.includes('🤖 **Reviewer:**') ||
+                  isErrorStubComment(c) ||
+                  /^\s*(?:[🚫✅]\s+)?Status:\s+(?:REQUEST_CHANGES|APPROVED)/m.test(body);
+                if (isCurrentRun || hasMarker) {
+                  if (isErrorStubComment(c)) {
+                    await markErrorStubIfNeeded(c);
+                  }
+                  const classifier =
+                    (body.includes('opencode-review-result.json') || isErrorStubComment(c))
+                      ? 'RESOLVED'
+                      : 'OUTDATED';
+                  await minimizeCommentIfNeeded(c, classifier);
+                }
+              }
+
+              if (hasBlocking) {
+                core.setFailed(`PR review found ${critCount} critical and ${warnCount} warning issue(s).`);
+              }
+            } catch (fatalErr) {
+              const errMsg = fatalErr?.message || String(fatalErr);
+              if (!statusPublished) {
+                await github.rest.repos.createCommitStatus({
+                  owner,
+                  repo,
+                  sha: commit_id,
+                  context: 'Review Gate',
+                  state: 'failure',
+                  description: `ERROR - publish failed (${durationStr}): ${errMsg}`.slice(0, 140),
+                }).catch((e) => core.warning(`Fallback commit status create failed: ${e.message}`));
+              }
+              await core.summary
+                .addRaw(`### ❌ خطا در ثبت نتیجهٔ بازبینی\nدر زمان ثبت وضعیت بازبینی خطا رخ داد:\n\n\`${errMsg}\``)
+                .write()
+                .catch((e) => core.warning(`Job summary write failed: ${e.message}`));
+              core.setFailed(`Publish formal PR review failed: ${errMsg}`);
+              throw fatalErr;
+            }
