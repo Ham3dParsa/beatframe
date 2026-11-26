@@ -1,0 +1,51 @@
+name: opencode
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  opencode:
+    # Bot-loop guard: the bot's own review comments can contain "/opencode"
+    # substrings, so explicitly skip any [bot] actor even if the body
+    # matches /oc or /opencode. Only trusted associations may trigger.
+    if: |-
+      (contains(github.event.comment.body, '/oc') ||
+        contains(github.event.comment.body, '/opencode')) &&
+      github.actor != 'opencode-agent[bot]' &&
+      github.actor != 'kilo-code-bot[bot]' &&
+      !endsWith(github.actor, '[bot]') &&
+      (github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'COLLABORATOR' ||
+        github.event.comment.author_association == 'MEMBER')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Run OpenCode
+        uses: anomalyco/opencode/github@2c14fc5586fe0b88e5c04732d2e846769cc35671 # pinned 2026-11
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          KILO_API_KEY: ${{ secrets.KILO_API_KEY }}
+        with:
+          model: ${{ vars.OPENCODE_MODEL || 'opencode/deepseek-v4.1-flash-free' }}
+          prompt: |-
+            SAFETY RULES (non-negotiable):
+            - NEVER commit or push directly to the "main" branch. Always create a new branch and open a pull request.
+            - NEVER modify, delete, or force-push existing branches, tags, releases, workflow files under .github/workflows/, or repository settings/secrets.
+            - NEVER read, print, or exfiltrate secrets or credentials.
+            - Follow AGENTS.md discipline for this repo: zero-dependency ES modules, zero middle dots in copy, plain Persian UI text, no Base64 audio blobs, version/changelog sync on behavioral changes, and never touch package.json unless the task requires it.
+            - If instructions are ambiguous or risky, stop and ask in a comment instead of acting.
