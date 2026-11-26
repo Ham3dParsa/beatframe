@@ -24,6 +24,9 @@ BeatFrame is a zero-dependency ES-module Canvas reel studio built as **deep modu
 4. **No Base64 audio blobs in JS**: Keep default audio tracks as binary `.mp3` files under `assets/audio/` loaded via `fetch()`.
 5. **Preserve verification hooks**: Keep `window.__BEATFRAME__` and `window.__HAMZABAN__` intact in `src/main.js`.
 
+## Release Rule
+Every merged behavioral change bumps `VERSION`/`BUILD` in `src/core/version.js`, sets `package.json` `version`, and adds a `CHANGELOG.md` entry in the same PR. Docs/tooling-only changes may skip the bump. `tests/version.test.mjs` enforces the sync.
+
 ## Verification Commands
 - Unit tests (pure DSP modules): `npm test` (runs `node --test tests/*.test.mjs`)
 - Local dev server: `npm run dev` (serves on `http://localhost:4173`)
